@@ -46,6 +46,8 @@ jobs:
         run: |
           scripts/build-rexglue.sh "$RUNNER_TEMP/work/fh2-recompiled" "$RUNNER_TEMP/toolchain"
           "$RUNNER_TEMP/work/fh2-recompiled/sdk/out/linux-arm64/rexglue" --help | head -n 20
+      - name: Check the shader library tools
+        run: FH2_SHADERS_CHECK=1 scripts/build-shaders.sh "$RUNNER_TEMP/work/fh2-recompiled" "$RUNNER_TEMP/toolchain" - -
       - name: Build the game with placeholder recompiled code
         run: |
           fh2="$RUNNER_TEMP/work/fh2-recompiled"

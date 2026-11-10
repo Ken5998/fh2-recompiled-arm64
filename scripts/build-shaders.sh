@@ -15,6 +15,7 @@
 # step) are added when FH2_SHADER_DUMP points at such a dump.
 #
 #   scripts/build-shaders.sh FH2_RECOMPILED TOOLCHAIN ISO OUT_FILE
+#   FH2_SHADERS_CHECK=1 scripts/build-shaders.sh FH2_RECOMPILED TOOLCHAIN - -   (tools only)
 set -euo pipefail
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,18 +44,6 @@ cxx=("$tc/llvm/bin/clang++" --sysroot="$tc/sysroot" --ld-path="$tc/bin/ld.lld" -
 rm -rf "$work" "$data"
 mkdir -p "$work/spirv" "$bin" "$data/images"
 
-echo "Shader files from the disc"
-python3 -I "$repo/scripts/extract-shader-data.py" "$fh2" "$iso" "$data/game_root"
-
-echo "Executable images"
-for xex in "$fh2/assets/game_root"/*.xex; do
-    "$rexglue" init achievements "$xex" "$data/achievements" \
-        --xex_despejar_imagem="$data/images/$(basename "$xex" .xex)" > "$data/images.log" 2>&1 || true
-done
-images=("$data/images"/*.*)
-[ -e "${images[0]}" ] || { echo "error: no executable image was written (see $data/images.log)" >&2; exit 1; }
-ls "$data/images"
-
 echo "Shader tools"
 "${cc[@]}" -O1 -I"$mspack" "$fh2/tools/xenos/lzx_xmem.c" "$mspack/lzxd.c" "$mspack/system.c" -o "$bin/lzx_xmem"
 "${cxx[@]}" -std=c++23 -O1 -I"$rec" -I"$rec/XenosRecomp" -I"$tp/fmt/include" -I"$tp/xxHash" \
@@ -63,6 +52,30 @@ echo "Shader tools"
 "${cxx[@]}" -std=c++23 -O1 -DFH2_RECOMP -I"$fh2/app/src/nativo" -I"$tp/xxHash" -I"$tp/fmt/include" \
     -DFMT_HEADER_ONLY "$fh2/tools/xenos/empaquetar.cpp" "$fh2/app/src/nativo/nfsmw_shader_library.cpp" \
     -o "$bin/empaquetar"
+
+if [ "${FH2_SHADERS_CHECK:-0}" = 1 ]; then  # CI: the tools only, no disc
+    printf 'float4 main(float4 p : SV_Position) : SV_Target { return p; }\n' > "$bin/check.hlsl"
+    "$dxc" -spirv -T ps_6_6 -E main -HV 2021 -fspv-target-env=vulkan1.2 -Fo "$bin/check.spv" "$bin/check.hlsl"
+    "$opt" --strip-debug "$bin/check.spv" -o "$bin/check.spv"
+    "$val" --target-env vulkan1.2 "$bin/check.spv"
+    "$rexglue" init achievements /nonexistent.xex "$bin" --xex_despejar_imagem="$bin/image" 2>&1 |
+        tee "$bin/check.log" || true
+    grep -q "XEX not found" "$bin/check.log"
+    echo "Shader tools OK"
+    exit 0
+fi
+
+echo "Shader files from the disc"
+python3 -I "$repo/scripts/extract-shader-data.py" "$fh2" "$iso" "$data/game_root"
+
+echo "Executable images"
+for xex in "$fh2/assets/game_root"/*.xex; do
+    "$rexglue" init achievements "$xex" "$data/achievements" \
+        --xex_despejar_imagem="$data/images/$(basename "$xex" .xex)" >> "$data/images.log" 2>&1 || true
+done
+images=("$data/images"/*.*)
+[ -e "${images[0]}" ] || { echo "error: no executable image was written (see $data/images.log)" >&2; exit 1; }
+ls "$data/images"
 
 echo "Shader containers"
 python3 -I "$fh2/tools/xenos/extrair_fxobj_pistas.py" "$data/game_root" "$work/fxobj_pistas" "$bin/lzx_xmem"
