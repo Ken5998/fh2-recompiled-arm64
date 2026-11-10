@@ -28,5 +28,10 @@
     "version": "2026.10.13.1",
     "url": "https://github.com/Ken5998/pinyon-shift-arm64/releases/download/sysroot-2026.10.13.1/pinyon-arm64-sysroot-2026.10.13.1.tar.xz",
     "sha256": "087B214D9748D98A67920AA39AE80ADA0222C782C09F47B367BD8A69FA6A2132"
+  },
+  "shader_tools": {
+    "version": "1.9.2607.1",
+    "url": "https://github.com/Ken5998/fh2-recompiled-arm64/releases/download/shader-tools-1.9.2607.1/fh2-shader-tools-1.9.2607.1-linux-arm64.tar.xz",
+    "sha256": "9EF71FCB9D7372DEB7BA7972C65C624A17CE8C5BD11C4C9A6A4BD79A5F0239FB"
   }
 }
