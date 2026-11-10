@@ -1,0 +1,55 @@
+name: Launcher release
+
+# Publishes the launcher for ARM64 Linux as release vVERSION (the version in
+# launcher/Cargo.toml). The launcher holds no game files and no build
+# scripts: on the device it fetches this repository's scripts and patches and
+# builds the game from the player's own disc.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  launcher:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Install Rust
+        run: |
+          command -v cargo || curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Build and pack the launcher
+        run: scripts/package-launcher.sh out
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive=out/FH2Recompiled-Launcher-linux-arm64.tar.gz
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' launcher/Cargo.toml | head -1)"
+          sha256="$(sha256sum "$archive" | cut -d' ' -f1)"
+          scripts/release-notes.sh "v$version" > notes.md
+          cat >> notes.md <<NOTES
+          ## Getting on the road
+
+          Bring your own Forza Horizon 2 disc for Xbox 360 (the USA one, title 4D530AA4) as an ISO, and leave about 25 GB free.
+
+          - Unpack FH2Recompiled-Launcher-linux-arm64.tar.gz in Desktop Mode and open FH2Recompiled/fh2-launcher. Point it at the ISO and press **Build**.
+          - The recompiled game is compiled on the handheld itself, so plug in the charger. Afterwards "Forza Horizon 2" shows up in Steam; artwork is up to you (SteamGridDB).
+          - The ISO is read where it is, not copied: leave it there, or build again after moving it.
+
+          This first version uses the emulated Xenos renderer, the faithful one. On a Snapdragon 8 Gen 2 that means roughly 20 fps in races. Settings are in game/fh2.toml (render scale, frame limit, world detail, frame generation).
+
+          Launcher SHA-256: \`$sha256\`. No game files are included.
+          NOTES
+          if gh release view "v$version" > /dev/null 2>&1; then
+            gh release upload "v$version" "$archive" --clobber
+            gh release edit "v$version" --notes-file notes.md
+          else
+            gh release create "v$version" "$archive" --title "Forza Horizon 2 launcher $version for ARM64 Linux" \
+              --notes-file notes.md --target "$GITHUB_SHA"
+          fi

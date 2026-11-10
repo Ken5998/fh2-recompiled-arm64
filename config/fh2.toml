@@ -1,0 +1,48 @@
+# Forza Horizon 2 (FH2 Recompiled, linux-arm64) settings, made for the
+# Retroid Pocket 6 (Adreno 740). scripts/build.sh puts this beside the game
+# the first time only, so your changes stay. The values follow FH2
+# Recompiled's Android launcher defaults (Snapdragon 8 Gen 2 phones).
+
+# Frame limit: the Xbox 360's 30. One game step per shown frame.
+video_mode_refresh_rate = 30
+fh2_ritmo_passos = true
+fullscreen = true
+
+# Render resolution in percent of 1280x720 (50 halves each side); the image
+# is scaled to the screen with present_effect: "bilinear", "fsr" or "cas".
+gpu_escala_render = 100
+present_effect = "bilinear"
+
+# Anti-aliasing off: the game's MSAA 4x nearly halves the frame rate.
+gpu_sin_msaa = true
+anisotropic_override = 0
+
+# Speed-ups from the Android launcher: the scene in one pass instead of three
+# tiles, adaptive vblank, the resolve shortcut, the car reflection cube over
+# three frames (2 faces a frame; 6 is the Xbox 360's).
+fh2_uma_faixa = true
+vblank_adaptativo = true
+gpu_atalho_resolve = true
+fh2_reflexo_faces = 2
+
+# World detail, 0.25 to 4 times the Xbox 360's (1); 0 turns it off (not for
+# objects).
+fh2_mundo_grama = 1.0
+fh2_mundo_objetos = 1.0
+fh2_mundo_reflexos = 1.0
+fh2_mundo_sombras = 1.0
+fh2_mundo_multidao = 1.0
+
+# A frame shown between every two the game makes (30 to 60 on screen):
+# smoother, a little more latency.
+present_frame_gen = false
+
+# Off: a draw waits for its shader (stutter the first time). On: skipped
+# until the shader is ready (brief gaps instead).
+async_shader_compilation = false
+
+# FIFO presents (vsync); mailbox repaints the same frame as fast as it can.
+vulkan_allow_present_mode_mailbox = false
+vulkan_allow_present_mode_immediate = false
+
+user_gamertag = "Player"

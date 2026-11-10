@@ -58,6 +58,14 @@ jobs:
           # No screen here, and no game: it only has to load and get going.
           timeout 20 "$fh2/app/out/linux-arm64/fh2" --help 2>&1 | tee "$RUNNER_TEMP/start.log" || true
           ! grep -q "error while loading shared libraries" "$RUNNER_TEMP/start.log"
+      - name: Check the start script, the settings and Add to Steam
+        run: |
+          bash -n config/fh2.sh && bash -n scripts/build.sh
+          python3 -c 'import tomllib; tomllib.load(open("config/fh2.toml", "rb"))'
+          mkdir -p "$RUNNER_TEMP/game" "$RUNNER_TEMP/home/.local/share/Steam/userdata/1/config"
+          touch "$RUNNER_TEMP/game/fh2.sh"
+          HOME="$RUNNER_TEMP/home" python3 scripts/add-to-steam.py "$RUNNER_TEMP/game"
+          test -s "$RUNNER_TEMP/home/.local/share/Steam/userdata/1/config/shortcuts.vdf"
 
   cross:
     runs-on: ubuntu-24.04
@@ -83,3 +91,27 @@ jobs:
           fh2="$RUNNER_TEMP/work/fh2-recompiled"
           scripts/placeholder-codegen.py "$fh2/app" "$fh2/sdk"
           scripts/build-game.sh "$fh2" "$RUNNER_TEMP/toolchain"
+
+  launcher:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust, and a virtual screen with OpenGL for the window
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxcursor1 libxrandr2 libxi6
+          command -v cargo || curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Test and build the launcher
+        run: |
+          cargo test --release --locked --manifest-path launcher/Cargo.toml
+          scripts/package-launcher.sh out
+          tar -tzvf out/FH2Recompiled-Launcher-linux-arm64.tar.gz
+      - name: Open the launcher window
+        run: |
+          # Still open after 10 seconds (timeout ends it with 124): it started.
+          status=0
+          HOME="$RUNNER_TEMP/home" xvfb-run -a -s "-screen 0 860x620x24" \
+            timeout 10 launcher/target/release/fh2-launcher || status=$?
+          test "$status" = 124
