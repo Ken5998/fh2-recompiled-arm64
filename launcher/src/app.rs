@@ -158,7 +158,7 @@ impl LauncherApp {
                 ui.label(RichText::new("○ Not built yet").strong());
                 ui.label(
                     RichText::new(
-                        "The first build can take an hour or more on a handheld and needs about 30 GB free. \
+                        "The first build can take an hour or more on a handheld and needs about 25 GB free. \
                          Keep it plugged in.",
                     )
                     .weak(),
@@ -272,7 +272,7 @@ impl LauncherApp {
                 }
                 if ui
                     .add_enabled(built, big("Add to Steam"))
-                    .on_hover_text("Adds the game to the Steam library with its artwork (Steam restarts)")
+                    .on_hover_text("Adds the game to the Steam library (Steam restarts); set its artwork in Steam")
                     .clicked()
                 {
                     self.start(Task::Steam);
@@ -356,12 +356,12 @@ impl eframe::App for LauncherApp {
                         self.paths.data.display()
                     );
                     if !self.paths.built() && free < tasks::BUILD_SPACE {
-                        ui.colored_label(ERROR, format!("{text}: the first build needs about 30 GB."));
+                        ui.colored_label(ERROR, format!("{text}: the first build needs about 25 GB."));
                     } else {
                         ui.label(RichText::new(text).weak());
                     }
                 }
-                ui.checkbox(&mut self.settings.add_to_steam, "Add to Steam with artwork when the build is done");
+                ui.checkbox(&mut self.settings.add_to_steam, "Add to Steam when the build is done");
             });
             ui.add_space(10.0);
             self.buttons(ui);
