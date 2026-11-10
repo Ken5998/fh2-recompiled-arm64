@@ -2,3 +2,4 @@ out/
 work/
 *.iso
 launcher/target/
+__pycache__/
