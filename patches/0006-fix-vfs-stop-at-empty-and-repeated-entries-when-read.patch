@@ -1,0 +1,82 @@
+From 9b6ef79e85e444294046d7e3d0daf2f1f782ac0b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Kenan=20Kasumovi=C4=87?=
+ <46025606+Ken5998@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 13:04:44 +0000
+Subject: [PATCH] fix(vfs): stop at empty and repeated entries when reading a
+ disc image's file tree
+
+Some disc images fill unused child links of the XDVDFS directory tree with
+0xFFFF or link back into it. The reader took 0xFFFF as a child and followed
+every link, recursing until the stack overflowed before the game started
+(SIGSEGV in DiscImageDevice::ReadEntry, 52000 frames deep). 0xFFFF is now
+no child, as tools/fase1_extraer.py reads it, and an entry already read or
+outside the image is skipped.
+---
+ .../filesystem/devices/disc_image_device.cpp  | 30 +++++++++++++++++--
+ 1 file changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/sdk/src/filesystem/devices/disc_image_device.cpp b/sdk/src/filesystem/devices/disc_image_device.cpp
+index 9d47734..eb88ffa 100644
+--- a/sdk/src/filesystem/devices/disc_image_device.cpp
++++ b/sdk/src/filesystem/devices/disc_image_device.cpp
+@@ -17,6 +17,8 @@
+ #include <rex/math.h>
+ #include <rex/memory.h>
+ 
++#include <unordered_set>
++
+ namespace rex::filesystem {
+ 
+ using namespace rex::literals;
+@@ -130,9 +132,33 @@ DiscImageDevice::Error DiscImageDevice::ReadAllEntries(ParseState* state,
+   return Error::kSuccess;
+ }
+ 
++namespace {
++// Directory table entries already read during this parse. Some disc images
++// (rebuilt or trimmed ones) fill unused child links with 0xFFFF or point back
++// into the tree; following those recursed until the stack overflowed.
++thread_local std::unordered_set<const uint8_t*>* parse_visited = nullptr;
++
++constexpr bool IsChildLink(uint16_t node) { return node != 0 && node != 0xFFFF; }
++}  // namespace
++
+ bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, uint16_t entry_ordinal,
+                                 DiscImageEntry* parent) {
+   const uint8_t* p = buffer + (entry_ordinal * 4);
++  std::unordered_set<const uint8_t*> visited_storage;
++  const bool owns_visited = parse_visited == nullptr;
++  if (owns_visited) {
++    parse_visited = &visited_storage;
++  }
++  struct VisitedReset {
++    bool owns;
++    ~VisitedReset() {
++      if (owns) parse_visited = nullptr;
++    }
++  } visited_reset{owns_visited};
++  if (p < state->ptr || p + 14 > state->ptr + state->size || !parse_visited->insert(p).second) {
++    // Outside the image, or an entry already read: skip it, keep the rest.
++    return true;
++  }
+ 
+   uint16_t node_l = memory::load<uint16_t>(p + 0);
+   uint16_t node_r = memory::load<uint16_t>(p + 2);
+@@ -142,7 +168,7 @@ bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, uint16
+   uint8_t name_length = memory::load<uint8_t>(p + 13);
+   auto name_buffer = reinterpret_cast<const char*>(p + 14);
+ 
+-  if (node_l && !ReadEntry(state, buffer, node_l, parent)) {
++  if (IsChildLink(node_l) && !ReadEntry(state, buffer, node_l, parent)) {
+     return false;
+   }
+ 
+@@ -186,7 +212,7 @@ bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, uint16
+   parent->children_.emplace_back(std::move(entry));
+ 
+   // Read next file in the list.
+-  if (node_r && !ReadEntry(state, buffer, node_r, parent)) {
++  if (IsChildLink(node_r) && !ReadEntry(state, buffer, node_r, parent)) {
+     return false;
+   }
+ 
