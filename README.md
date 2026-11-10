@@ -47,7 +47,11 @@ The game draws with FH2 Recompiled's native renderer, from a shader library
 (`fh2_shaders.nfsp`) the build makes out of your own disc with DXC (built for
 linux-arm64 in this repository's `shader-tools` release). On the RP6 it holds
 a steady 30 fps with GPU and CPU to spare; the first couple of minutes run
-slower while Turnip compiles and caches the shaders. With
+slower while Turnip compiles and caches the shaders. A few shaders (the
+D3D library's own, loose in the executable) only show up while playing: the
+game writes them to `~/.local/share/FH2Recompiled-arm64/shader-dump`, and the
+next Build or Update adds them to the library. Until then some scenes, night
+lighting above all, have wrong colours. With
 `FH2_RENDERER=emulated %command%` in Steam's launch options it uses the
 emulated Xenos GPU instead: the faithful renderer, but about 15 fps there.
 
