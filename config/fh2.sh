@@ -25,8 +25,13 @@ disc="$here/../disc.iso"
 renderer=()
 if [ -f "$here/fh2_shaders.nfsp" ] && [ "${FH2_RENDERER:-native}" != emulated ]; then
     # The Android launcher's native renderer defaults.
+    # Shaders the library lacks (the D3D library's own, loose in the
+    # executable) are written to ../shader-dump as you play; the next
+    # build.sh adds them to the library.
+    mkdir -p "$here/../shader-dump"
     renderer=(--nfsmw_renderizador=nativo
-        --fh2_nativo_vertices_sin_espera=true --fh2_nativo_destinos_exactos=true)
+        --fh2_nativo_vertices_sin_espera=true --fh2_nativo_destinos_exactos=true
+        --fh2_nativo_volcar_sueltos="$here/../shader-dump")
 fi
 
 export LD_LIBRARY_PATH="$here${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

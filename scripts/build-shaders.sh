@@ -82,7 +82,7 @@ echo "Shader containers"
 python3 -I "$fh2/tools/xenos/extrair_fxobj_pistas.py" "$data/game_root" "$work/fxobj_pistas" "$bin/lzx_xmem"
 python3 -I "$fh2/tools/xenos/extrair_contenedores.py" "$data/game_root" "$work/contenedores" \
     "$work/fxobj_pistas" "${images[@]}"
-if [ -n "${FH2_SHADER_DUMP:-}" ] && [ -d "$FH2_SHADER_DUMP" ]; then
+if [ -n "${FH2_SHADER_DUMP:-}" ] && compgen -G "$FH2_SHADER_DUMP/*.bin" > /dev/null; then
     python3 -I "$fh2/tools/xenos/d3d_internos.py" "$FH2_SHADER_DUMP" "$work/contenedores"
 fi
 

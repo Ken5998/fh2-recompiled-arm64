@@ -101,14 +101,19 @@ step "Building Forza Horizon 2 (an hour or more on a handheld)"
 # The native renderer's shader library, made from the disc (upstream's
 # tools/xenos/biblioteca.sh): about twice the frame rate of the emulated GPU.
 # Without it the game runs on the emulated GPU, so a failure here only warns.
-shaders_key="$prepare_key $iso_key $(key "$repo/toolchain.json" "$repo/scripts/build-shaders.sh" "$repo/scripts/extract-shader-data.py")"
+# fh2.sh writes the shaders the library lacks to DIR/shader-dump while the
+# game runs; a new dump makes the library again with them.
+dump="$dir/shader-dump"
+dump_list="$(ls "$dump" 2>/dev/null | grep '\.bin$' || true)"
+shaders_key="$prepare_key $iso_key $(key "$repo/toolchain.json" "$repo/scripts/build-shaders.sh" "$repo/scripts/extract-shader-data.py") $(printf '%s' "$dump_list" | sha256sum | cut -d' ' -f1)"
 if [ ! -x "$tc/shader-tools/bin/dxc" ]; then
     echo "No shader compiler in this toolchain yet: the game uses the emulated GPU."
 elif done_with shaders "$shaders_key" && [ -f "$dir/fh2_shaders.nfsp" ]; then
     echo "Shader library already made - skipping."
 else
     step "Making the shader library for the native renderer"
-    if "$repo/scripts/build-shaders.sh" "$fh2" "$tc" "$iso" "$dir/fh2_shaders.nfsp"; then
+    [ -z "$dump_list" ] || echo "With $(printf '%s\n' "$dump_list" | wc -l) shaders the game found missing ($dump)."
+    if FH2_SHADER_DUMP="$dump" "$repo/scripts/build-shaders.sh" "$fh2" "$tc" "$iso" "$dir/fh2_shaders.nfsp"; then
         mark shaders "$shaders_key"
     else
         echo "Warning: the shader library could not be made; the game uses the emulated GPU."
