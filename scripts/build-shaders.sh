@@ -58,7 +58,7 @@ if [ "${FH2_SHADERS_CHECK:-0}" = 1 ]; then  # CI: the tools only, no disc
     "$dxc" -spirv -T ps_6_6 -E main -HV 2021 -fspv-target-env=vulkan1.2 -Fo "$bin/check.spv" "$bin/check.hlsl"
     "$opt" --strip-debug "$bin/check.spv" -o "$bin/check.spv"
     "$val" --target-env vulkan1.2 "$bin/check.spv"
-    "$rexglue" init achievements /nonexistent.xex "$bin" --xex_despejar_imagem="$bin/image" 2>&1 |
+    "$rexglue" init --project-name image --xex-path /nonexistent.xex achievements /nonexistent.xex "$bin" --xex_despejar_imagem="$bin/image" 2>&1 |
         tee "$bin/check.log" || true
     grep -q "XEX not found" "$bin/check.log"
     echo "Shader tools OK"
@@ -70,7 +70,8 @@ python3 -I "$repo/scripts/extract-shader-data.py" "$fh2" "$iso" "$data/game_root
 
 echo "Executable images"
 for xex in "$fh2/assets/game_root"/*.xex; do
-    "$rexglue" init achievements "$xex" "$data/achievements" \
+    # init's own options are required by its parser; achievements claims the action.
+    "$rexglue" init --project-name image --xex-path "$xex" achievements "$xex" "$data/achievements" \
         --xex_despejar_imagem="$data/images/$(basename "$xex" .xex)" >> "$data/images.log" 2>&1 || true
 done
 images=("$data/images"/*.*)
