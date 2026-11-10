@@ -30,8 +30,9 @@ You need an ISO of your own **Forza Horizon 2 for Xbox 360**, USA edition
    controls reach the game only when Steam starts it. The launcher adds the
    shortcut without artwork; pick yours with SteamGridDB.
 
-The disc image is read in place, never copied or extracted (only the three
-executables the recompiler needs are taken out). Keep it where it is, or
+The disc image is read in place, never copied or extracted: only the three
+executables the recompiler needs are taken out, plus the game's shader files
+for a few minutes while the build makes the native renderer's shader library. Keep it where it is, or
 build again after moving it. **Update** in the launcher pulls this
 repository's fixes and rebuilds only what they touch.
 
@@ -40,14 +41,20 @@ repository's fixes and rebuilds only what they touch.
 `~/.local/share/FH2Recompiled-arm64/game/fh2.toml` holds the settings, preset
 the way FH2 Recompiled's Android launcher sets up Snapdragon 8 Gen 2 phones:
 30 fps limit, render scale 100 % of 1280x720, MSAA off, the scene in one pass,
-car reflections over three frames. Lower `gpu_escala_render` (for instance to
-75) for more speed, or turn on `present_frame_gen` for a smoother 60 on screen.
+car reflections over three frames, one game step per frame shown.
 
-This first version draws with the emulated Xenos GPU, the faithful renderer.
-Upstream measures about 20 fps in races with it on the same chip as the RP6.
-FH2 Recompiled's faster native renderer needs a shader library made from
-your own game files (`fh2_shaders.nfsp`); support for it on ArmadaOS comes
-next.
+The game draws with FH2 Recompiled's native renderer, from a shader library
+(`fh2_shaders.nfsp`) the build makes out of your own disc with DXC (built for
+linux-arm64 in this repository's `shader-tools` release). On the RP6 it holds
+a steady 30 fps with GPU and CPU to spare; the first couple of minutes run
+slower while Turnip compiles and caches the shaders. With
+`FH2_RENDERER=emulated %command%` in Steam's launch options it uses the
+emulated Xenos GPU instead: the faithful renderer, but about 15 fps there.
+
+Keep the 30 fps limit. The game simulates 30 steps a second: at 60 fps
+frames carry uneven motion, and below 30 with `fh2_ritmo_passos` on the game
+runs in slow motion. Frame generation (`present_frame_gen`) adds a frame of
+latency, so the car feels heavy.
 
 If MangoHud or the Steam overlay flicker, the launcher can turn GPU
 preemption off (kernel option `msm.enable_preemption=0`, then restart).

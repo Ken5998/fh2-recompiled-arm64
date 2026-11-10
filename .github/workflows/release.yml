@@ -41,8 +41,9 @@ jobs:
           - Unpack FH2Recompiled-Launcher-linux-arm64.tar.gz in Desktop Mode and open FH2Recompiled/fh2-launcher. Point it at the ISO and press **Build**.
           - The recompiled game is compiled on the handheld itself, so plug in the charger. Afterwards "Forza Horizon 2" shows up in Steam; artwork is up to you (SteamGridDB).
           - The ISO is read where it is, not copied: leave it there, or build again after moving it.
+          - The build also turns the disc's shaders into the native renderer's shader library, with an arm64 DXC from this repository's shader-tools release. The first minutes of play are slower while the driver caches them.
 
-          This first version uses the emulated Xenos renderer, the faithful one. On a Snapdragon 8 Gen 2 that means roughly 20 fps in races. Settings are in game/fh2.toml (render scale, frame limit, world detail, frame generation).
+          On the Retroid Pocket 6 the native renderer holds 30 fps. Leave the frame limit at 30: the game simulates 30 steps a second. FH2_RENDERER=emulated in the launch options switches to the slower, faithful emulated GPU. Settings are in game/fh2.toml.
 
           Launcher SHA-256: \`$sha256\`. No game files are included.
           NOTES
