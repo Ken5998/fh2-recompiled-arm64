@@ -18,11 +18,12 @@ gpu_sin_msaa = true
 anisotropic_override = 0
 
 # Speed-ups from the Android launcher: the scene in one pass instead of three
-# tiles, adaptive vblank, the resolve shortcut, the car reflection cube over
-# three frames (2 faces a frame; 6 is the Xbox 360's).
+# tiles, adaptive vblank, the car reflection cube over three frames (2 faces
+# a frame; 6 is the Xbox 360's). The resolve shortcut stays off: on Turnip it
+# made the shadows flash (RP6, 2026-11-10).
 fh2_uma_faixa = true
 vblank_adaptativo = true
-gpu_atalho_resolve = true
+gpu_atalho_resolve = false
 fh2_reflexo_faces = 2
 
 # World detail, 0.25 to 4 times the Xbox 360's (1); 0 turns it off (not for
