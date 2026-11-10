@@ -1,4 +1,4 @@
-From 9b6ef79e85e444294046d7e3d0daf2f1f782ac0b Mon Sep 17 00:00:00 2001
+From a8c9d44cb6a8a101c6c56e5d1999fa5214e74d72 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Kenan=20Kasumovi=C4=87?=
  <46025606+Ken5998@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 13:04:44 +0000
@@ -12,38 +12,77 @@ every link, recursing until the stack overflowed before the game started
 no child, as tools/fase1_extraer.py reads it, and an entry already read or
 outside the image is skipped.
 ---
- .../filesystem/devices/disc_image_device.cpp  | 30 +++++++++++++++++--
- 1 file changed, 28 insertions(+), 2 deletions(-)
+ .../filesystem/devices/disc_image_device.h    |   2 +-
+ .../filesystem/devices/disc_image_device.cpp  | 125 ++++++++++++------
+ 2 files changed, 85 insertions(+), 42 deletions(-)
 
+diff --git a/sdk/include/rex/filesystem/devices/disc_image_device.h b/sdk/include/rex/filesystem/devices/disc_image_device.h
+index 2183212..bf3ba3e 100644
+--- a/sdk/include/rex/filesystem/devices/disc_image_device.h
++++ b/sdk/include/rex/filesystem/devices/disc_image_device.h
+@@ -82,7 +82,7 @@ class DiscImageDevice : public Device {
+   Error Verify(ParseState* state);
+   bool VerifyMagic(ParseState* state, size_t offset);
+   Error ReadAllEntries(ParseState* state, const uint8_t* root_buffer);
+-  bool ReadEntry(ParseState* state, const uint8_t* buffer, uint16_t entry_ordinal,
++  bool ReadEntry(ParseState* state, const uint8_t* buffer, size_t buffer_size, uint16_t entry_ordinal,
+                  DiscImageEntry* parent);
+ };
+ 
 diff --git a/sdk/src/filesystem/devices/disc_image_device.cpp b/sdk/src/filesystem/devices/disc_image_device.cpp
-index 9d47734..eb88ffa 100644
+index 9d47734..5b5b45b 100644
 --- a/sdk/src/filesystem/devices/disc_image_device.cpp
 +++ b/sdk/src/filesystem/devices/disc_image_device.cpp
-@@ -17,6 +17,8 @@
+@@ -17,6 +17,9 @@
  #include <rex/math.h>
  #include <rex/memory.h>
  
++#include <algorithm>
 +#include <unordered_set>
 +
  namespace rex::filesystem {
  
  using namespace rex::literals;
-@@ -130,9 +132,33 @@ DiscImageDevice::Error DiscImageDevice::ReadAllEntries(ParseState* state,
+@@ -123,16 +126,57 @@ DiscImageDevice::Error DiscImageDevice::ReadAllEntries(ParseState* state,
+   root_entry->attributes_ = kFileAttributeDirectory;
+   root_entry_ = std::unique_ptr<Entry>(root_entry);
+ 
+-  if (!ReadEntry(state, root_buffer, 0, root_entry)) {
++  if (!ReadEntry(state, root_buffer, state->root_size, 0, root_entry)) {
+     return Error::kErrorOutOfMemory;
+   }
+ 
    return Error::kSuccess;
  }
  
+-bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, uint16_t entry_ordinal,
+-                                DiscImageEntry* parent) {
+-  const uint8_t* p = buffer + (entry_ordinal * 4);
 +namespace {
 +// Directory table entries already read during this parse. Some disc images
-+// (rebuilt or trimmed ones) fill unused child links with 0xFFFF or point back
-+// into the tree; following those recursed until the stack overflowed.
++// (rebuilt or trimmed ones) fill unused child links with 0xFFFF, point past
++// the end of a directory's table or back into the tree; following those
++// recursed until the stack overflowed or read garbage names. The walk now
++// reads them the way tools/fase1_extraer.py does: 0 and 0xFFFF are no child,
++// an entry must lie inside its directory's table and inside the image, has a
++// plain ASCII name, and is read once.
 +thread_local std::unordered_set<const uint8_t*>* parse_visited = nullptr;
 +
 +constexpr bool IsChildLink(uint16_t node) { return node != 0 && node != 0xFFFF; }
++
++// GDFX names are plain ASCII. Anything else is a stray table read, and the
++// path code throws on invalid UTF-8, so such entries are left out.
++bool IsPlainName(const char* name, size_t length) {
++  for (size_t i = 0; i < length; ++i) {
++    const auto c = static_cast<unsigned char>(name[i]);
++    if (c < 0x20 || c >= 0x7F || c == '\\' || c == '/') return false;
++  }
++  return true;
++}
 +}  // namespace
 +
- bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, uint16_t entry_ordinal,
-                                 DiscImageEntry* parent) {
-   const uint8_t* p = buffer + (entry_ordinal * 4);
++bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, size_t buffer_size,
++                                uint16_t entry_ordinal, DiscImageEntry* parent) {
 +  std::unordered_set<const uint8_t*> visited_storage;
 +  const bool owns_visited = parse_visited == nullptr;
 +  if (owns_visited) {
@@ -55,28 +94,102 @@ index 9d47734..eb88ffa 100644
 +      if (owns) parse_visited = nullptr;
 +    }
 +  } visited_reset{owns_visited};
-+  if (p < state->ptr || p + 14 > state->ptr + state->size || !parse_visited->insert(p).second) {
-+    // Outside the image, or an entry already read: skip it, keep the rest.
-+    return true;
++
++  const size_t offset = size_t(entry_ordinal) * 4;
++  const uint8_t* p = buffer + offset;
++  const uint8_t* image_end = state->ptr + state->size;
++  if (offset + 14 > buffer_size || buffer < state->ptr || p + 14 > image_end ||
++      !parse_visited->insert(p).second) {
++    return true;  // Skip it, keep the rest of the tree.
 +  }
  
    uint16_t node_l = memory::load<uint16_t>(p + 0);
    uint16_t node_r = memory::load<uint16_t>(p + 2);
-@@ -142,7 +168,7 @@ bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, uint16
+@@ -142,51 +186,50 @@ bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, uint16
    uint8_t name_length = memory::load<uint8_t>(p + 13);
    auto name_buffer = reinterpret_cast<const char*>(p + 14);
  
 -  if (node_l && !ReadEntry(state, buffer, node_l, parent)) {
-+  if (IsChildLink(node_l) && !ReadEntry(state, buffer, node_l, parent)) {
++  if (IsChildLink(node_l) && !ReadEntry(state, buffer, buffer_size, node_l, parent)) {
      return false;
    }
  
-@@ -186,7 +212,7 @@ bool DiscImageDevice::ReadEntry(ParseState* state, const uint8_t* buffer, uint16
-   parent->children_.emplace_back(std::move(entry));
+-  auto name = std::string(name_buffer, name_length);
+-
+-  auto entry = DiscImageEntry::Create(this, parent, name, mmap_.get());
+-  entry->attributes_ = attributes | kFileAttributeReadOnly;
+-  entry->size_ = length;
+-  entry->allocation_size_ = rex::round_up(length, bytes_per_sector());
+-
+-  // Set to January 1, 1970 (UTC) in 100-nanosecond intervals
+-  entry->create_timestamp_ = 10000 * 11644473600000LL;
+-  entry->access_timestamp_ = 10000 * 11644473600000LL;
+-  entry->write_timestamp_ = 10000 * 11644473600000LL;
+-
+-  if (attributes & kFileAttributeDirectory) {
+-    // Folder.
+-    entry->data_offset_ = 0;
+-    entry->data_size_ = 0;
+-    if (length) {
+-      // Not a leaf - read in children.
+-      if (state->size < state->game_offset + (sector * kXESectorSize)) {
+-        // Out of bounds read.
+-        return false;
+-      }
+-      // Read child list.
+-      uint8_t* folder_ptr = state->ptr + state->game_offset + (sector * kXESectorSize);
+-      if (!ReadEntry(state, folder_ptr, 0, entry.get())) {
+-        return false;
++  if (name_length != 0 && offset + 14 + name_length <= buffer_size &&
++      p + 14 + name_length <= image_end && IsPlainName(name_buffer, name_length)) {
++    auto name = std::string(name_buffer, name_length);
++
++    auto entry = DiscImageEntry::Create(this, parent, name, mmap_.get());
++    entry->attributes_ = attributes | kFileAttributeReadOnly;
++    entry->size_ = length;
++    entry->allocation_size_ = rex::round_up(length, bytes_per_sector());
++
++    // Set to January 1, 1970 (UTC) in 100-nanosecond intervals
++    entry->create_timestamp_ = 10000 * 11644473600000LL;
++    entry->access_timestamp_ = 10000 * 11644473600000LL;
++    entry->write_timestamp_ = 10000 * 11644473600000LL;
++
++    if (attributes & kFileAttributeDirectory) {
++      // Folder.
++      entry->data_offset_ = 0;
++      entry->data_size_ = 0;
++      const size_t folder_offset = state->game_offset + (sector * kXESectorSize);
++      if (length && folder_offset < state->size) {
++        // Not a leaf - read in children, within its table and the image.
++        const size_t folder_size = std::min<size_t>(length, state->size - folder_offset);
++        if (!ReadEntry(state, state->ptr + folder_offset, folder_size, 0, entry.get())) {
++          return false;
++        }
+       }
++    } else {
++      // File.
++      entry->data_offset_ = state->game_offset + (sector * kXESectorSize);
++      entry->data_size_ = length;
++      ++file_count_;
++      total_file_size_ += length;
+     }
+-  } else {
+-    // File.
+-    entry->data_offset_ = state->game_offset + (sector * kXESectorSize);
+-    entry->data_size_ = length;
+-    ++file_count_;
+-    total_file_size_ += length;
+-  }
+ 
+-  // Add to parent.
+-  parent->children_.emplace_back(std::move(entry));
++    // Add to parent.
++    parent->children_.emplace_back(std::move(entry));
++  }
  
    // Read next file in the list.
 -  if (node_r && !ReadEntry(state, buffer, node_r, parent)) {
-+  if (IsChildLink(node_r) && !ReadEntry(state, buffer, node_r, parent)) {
++  if (IsChildLink(node_r) && !ReadEntry(state, buffer, buffer_size, node_r, parent)) {
      return false;
    }
  
