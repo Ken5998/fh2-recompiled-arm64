@@ -40,7 +40,14 @@ cmake -S "$fh2/app" -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DREXGLUE_USE_VULKAN=ON -DREXGLUE_ENABLE_TRACY=OFF -DSDL_HIDAPI_LIBUSB=OFF
 cmake --build "$build" --parallel "$jobs"
 
-for f in "$build/fh2" "$build/libfh2_xmediafacade_default.so" "$build/libfh2_speechfacade_default.so" \
-         "$fh2/sdk/out/linux-arm64/librexruntime.so" "$fh2/sdk/out/linux-arm64/librexgpu-xenos.so"; do
+for f in "$build/fh2" "$fh2/sdk/out/linux-arm64/librexruntime.so" "$fh2/sdk/out/linux-arm64/librexgpu-xenos.so"; do
+    check_aarch64 "$f"
+done
+# The two guest modules (XMediaFacade and SpeechFacade): codegen names them
+# after their files, libfh2_<name>.so.
+modules=("$build"/libfh2_*.so)
+[ "${#modules[@]}" -ge 2 ] && [ -e "${modules[0]}" ] ||
+    { echo "error: the guest modules (libfh2_*.so) were not built in $build" >&2; exit 1; }
+for f in "${modules[@]}"; do
     check_aarch64 "$f"
 done
