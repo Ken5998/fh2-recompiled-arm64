@@ -1,0 +1,111 @@
+name: Shader tools
+
+# Builds the shader compiler the native renderer's library needs (DXC, the
+# version upstream's tools/xenos/ferramentas.sh pins, plus SPIR-V Tools'
+# spirv-opt and spirv-val) for linux-arm64: Microsoft ships DXC for x86-64
+# only. Run by hand, it publishes release shader-tools-VERSION; pin it in
+# toolchain.json ("shader_tools"). A push that touches this file only builds.
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths: [.github/workflows/shader-tools.yml]
+
+permissions:
+  contents: write
+
+env:
+  DXC_TAG: v1.9.2607
+  VERSION: 1.9.2607.1
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    container: ubuntu:24.04
+    timeout-minutes: 150
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update -q
+          DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
+            ca-certificates git cmake ninja-build clang lld python3 xz-utils file
+      - name: Fetch DXC
+        run: |
+          git clone -q --depth 1 --branch "$DXC_TAG" --recurse-submodules --shallow-submodules \
+            https://github.com/microsoft/DirectXShaderCompiler.git dxc
+          git -C dxc log -1 --format='DXC %H %cs'
+      - name: Build DXC
+        run: |
+          cmake -S dxc -B build-dxc -G Ninja -C dxc/cmake/caches/PredefinedParams.cmake \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DLLVM_USE_LINKER=lld -DLLVM_ENABLE_ASSERTIONS=OFF -DLLVM_PARALLEL_LINK_JOBS=2 \
+            -DSPIRV_BUILD_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_TESTS=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
+          ninja -C build-dxc dxc
+      - name: Build SPIR-V Tools
+        run: |
+          cmake -S dxc/external/SPIRV-Tools -B build-spirv -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DSPIRV-Headers_SOURCE_DIR="$PWD/dxc/external/SPIRV-Headers" \
+            -DSPIRV_SKIP_TESTS=ON -DSPIRV_WERROR=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
+          ninja -C build-spirv spirv-opt spirv-val
+      - name: Package
+        run: |
+          name="fh2-shader-tools-$VERSION-linux-arm64"
+          mkdir -p "out/$name/bin" "out/$name/lib" "out/$name/licenses"
+          cp build-dxc/bin/dxc "out/$name/bin/"
+          cp -L build-dxc/lib/libdxcompiler.so "out/$name/lib/"
+          cp build-spirv/tools/spirv-opt build-spirv/tools/spirv-val "out/$name/bin/"
+          strip "out/$name/bin/"* "out/$name/lib/"*
+          cp dxc/LICENSE.TXT "out/$name/licenses/DXC-LICENSE.TXT"
+          cp dxc/ThirdPartyNotices.txt "out/$name/licenses/DXC-ThirdPartyNotices.txt" 2>/dev/null || true
+          cp dxc/external/SPIRV-Tools/LICENSE "out/$name/licenses/SPIRV-Tools-LICENSE"
+          cp dxc/external/SPIRV-Headers/LICENSE "out/$name/licenses/SPIRV-Headers-LICENSE"
+          {
+            echo "DXC $DXC_TAG $(git -C dxc rev-parse HEAD)"
+            echo "SPIRV-Tools $(git -C dxc/external/SPIRV-Tools rev-parse HEAD)"
+            echo "SPIRV-Headers $(git -C dxc/external/SPIRV-Headers rev-parse HEAD)"
+          } > "out/$name/VERSIONS.txt"
+          file "out/$name/bin/"* "out/$name/lib/"*
+          "out/$name/bin/dxc" --version
+          "out/$name/bin/spirv-val" --version
+          printf 'float4 main(float4 p : SV_Position) : SV_Target { return p; }\n' > t.hlsl
+          "out/$name/bin/dxc" -spirv -T ps_6_6 -E main -HV 2021 -fspv-target-env=vulkan1.2 -Fo t.spv t.hlsl
+          "out/$name/bin/spirv-opt" --strip-debug t.spv -o t.spv
+          "out/$name/bin/spirv-val" --target-env vulkan1.2 t.spv
+          tar -C out -cJf "out/$name.tar.xz" "$name"
+          sha256sum "out/$name.tar.xz"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shader-tools
+          path: out/*.tar.xz
+          retention-days: 7
+          compression-level: 0
+
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: shader-tools
+          path: out
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive="$(ls out/*.tar.xz)"
+          sha256="$(sha256sum "$archive" | cut -d' ' -f1 | tr a-f A-F)"
+          cat > notes.md <<NOTES
+          DXC $DXC_TAG (the version upstream pins for its shader library) and SPIR-V Tools' spirv-opt and spirv-val, built for linux-arm64. The game build uses them on the handheld to make the native renderer's shader library from your own disc. They hold no game files.
+
+          Sources: https://github.com/microsoft/DirectXShaderCompiler/tree/$DXC_TAG and its SPIRV-Tools and SPIRV-Headers submodules; licences in licenses/.
+
+          SHA-256: \`$sha256\`
+          NOTES
+          gh release create "shader-tools-$VERSION" "$archive" -R "${{ github.repository }}" \
+            --title "Shader tools $VERSION" --notes-file notes.md --latest=false
