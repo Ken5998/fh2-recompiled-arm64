@@ -1,0 +1,52 @@
+From e78bd0a4e01a3a1742510a1f7331dbf92316c765 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Kenan=20Kasumovi=C4=87?=
+ <46025606+Ken5998@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 17:04:34 +0000
+Subject: [PATCH] feat(passos): optional simulation step on every vblank
+
+---
+ app/src/fh2_passos.cpp | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/app/src/fh2_passos.cpp b/app/src/fh2_passos.cpp
+index 1a0b196..502c18a 100644
+--- a/app/src/fh2_passos.cpp
++++ b/app/src/fh2_passos.cpp
+@@ -42,6 +42,11 @@ REXCVAR_DEFINE_BOOL(fh2_ritmo_passos, true, "FH2",
+                     "Start a simulation step only when the render thread has swapped all but the latest one, so "
+                     "every frame shown advances the game by one step instead of 0 or 2 (app/src/fh2_passos.cpp)")
+     .lifecycle(rex::cvar::Lifecycle::kHotReload);
++REXCVAR_DEFINE_BOOL(fh2_passo_cada_vblank, false, "FH2",
++                    "Start a simulation step on every guest vblank instead of every second one (the game's own "
++                    "one-step-every-vblank mode): with video_mode_refresh_rate = 60, 60 steps a second if the "
++                    "frames keep up. Experimental: the game's step length is not changed")
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+ REXCVAR_DEFINE_DOUBLE(fh2_ritmo_passos_espera_max, 50.0, "FH2",
+                       "With fh2_ritmo_passos, the longest a step waits for the render thread before it runs anyway "
+                       "(ms)")
+@@ -210,7 +215,7 @@ const bool g_swap_observer_set = [] {
+ //   if (raise) { sub_8248A468(handle) /* NtSetEvent */; count = 0; }
+ REX_HOOK_RAW(sub_8248BA70) {
+   g_base.store(base, std::memory_order_release);
+-  if (!REXCVAR_GET(fh2_ritmo_passos)) {
++  if (!REXCVAR_GET(fh2_ritmo_passos) && !REXCVAR_GET(fh2_passo_cada_vblank)) {
+     g_held.store(false, std::memory_order_release);
+     __imp__sub_8248BA70(ctx, base);
+     return;
+@@ -220,12 +225,14 @@ REX_HOOK_RAW(sub_8248BA70) {
+   sub_824893E8(ctx, base);
+   const uint32_t settings = ctx.r3.u32;
+   bool raise = true;
+-  if (base[settings + kSettingsEverySecond] != 0) {
++  if (REXCVAR_GET(fh2_passo_cada_vblank)) {
++    // Every vblank, as the game's own mode does.
++  } else if (base[settings + kSettingsEverySecond] != 0) {
+     raise = count > 1;
+   } else if (base[settings + kSettingsEverySecondUnless] != 0 && base[kStepEveryVblankOff] == 0) {
+     raise = count > 1;
+   }
+-  if (!raise || HoldStep()) {
++  if (!raise || (REXCVAR_GET(fh2_ritmo_passos) && HoldStep())) {
+     // A held raise keeps the count, so the next vblank asks again.
+     return;
+   }
