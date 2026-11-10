@@ -1,0 +1,7 @@
+fh2-recompiled-arm64 builds FH2 Recompiled (https://github.com/gabrick75/fh2-recompiled,
+GPL-3.0) and its copy of the ReXGlue SDK (BSD-3-Clause) for linux-arm64. The patches in
+this repository modify those projects and are released under the same licenses.
+
+Forza, Forza Horizon and Xbox 360 are trademarks of the Microsoft group of companies.
+This project is not affiliated with or endorsed by Microsoft, Playground Games or Sumo
+Digital. No game content is included.
