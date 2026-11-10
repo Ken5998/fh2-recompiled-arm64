@@ -68,6 +68,11 @@ if [ "$arch" = aarch64 ]; then
     chmod +x "$dest/ninja/ninja"
     for tool in cmake ctest cpack; do ln -sfn "../cmake/bin/$tool" "$dest/bin/$tool"; done
     ln -sfn ../ninja/ninja "$dest/bin/ninja"
+    # DXC and SPIR-V Tools for the native renderer's shader library
+    # (scripts/build-shaders.sh), once this repository pins a build of them.
+    if python3 -c 'import json, sys; sys.exit("shader_tools" not in json.load(open(sys.argv[1])))' "$repo/toolchain.json"; then
+        fetch "$(field shader_tools url)" "$(field shader_tools sha256)" shader-tools --strip-components=1
+    fi
 fi
 
 # The LLVM release's ld.lld needs libxml2.so.2, which current distributions
