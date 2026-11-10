@@ -1,0 +1,28 @@
+From 44ae270a5f42c7ead711837672cae41300b7adda Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Kenan=20Kasumovi=C4=87?=
+ <46025606+Ken5998@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 08:45:57 +0000
+Subject: [PATCH 1/5] fix(linux): let the build use code generated outside it
+
+---
+ sdk/resources/templates/init/rexglue_cmake.inja | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/sdk/resources/templates/init/rexglue_cmake.inja b/sdk/resources/templates/init/rexglue_cmake.inja
+index 95b4d9e..cc20a2d 100644
+--- a/sdk/resources/templates/init/rexglue_cmake.inja
++++ b/sdk/resources/templates/init/rexglue_cmake.inja
+@@ -122,7 +122,12 @@ endmacro()
+ # A cross build (Nintendo Switch) has no rexglue it could run: the tool is a
+ # host program. There the generated sources must already exist, produced by
+ # running codegen with a host SDK.
+-if(TARGET rex::rexglue)
++#
++# REXGLUE_EXTERNAL_CODEGEN: the generated sources are made outside the build
++# (tools/codegen.sh, which also runs the steps after codegen), so the build
++# never runs rexglue on its own and never needs to run it on the build host.
++option(REXGLUE_EXTERNAL_CODEGEN "Generated sources come from outside the build" OFF)
++if(TARGET rex::rexglue AND NOT REXGLUE_EXTERNAL_CODEGEN)
+ add_custom_command(
+     OUTPUT "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.build.stamp"
+            {{ cmake_var("REXGLUE_ENTRYPOINT_GENERATED_SOURCES") }}

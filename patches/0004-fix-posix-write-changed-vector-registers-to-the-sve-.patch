@@ -1,0 +1,67 @@
+From d6c6786aeb3bdc85c01aaef0a900d4af80985d1b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Kenan=20Kasumovi=C4=87?=
+ <46025606+Ken5998@users.noreply.github.com>
+Date: Thu, 15 Oct 2026 15:34:53 +0000
+Subject: [PATCH 4/5] fix(posix): write changed vector registers to the sve
+ context too
+
+A handler that changes a vector register (to give a skipped load its
+result, for instance) had no effect on CPUs with SVE while the thread
+had live SVE state: the kernel then restores the vector registers from
+the SVE record of the signal frame, not from fpsimd_context. qemu-user
+always does.
+
+The changed registers are now also written to the SVE record when it
+holds the registers: Vn is the low 128 bits of Zn, and the rest is
+cleared, as a write to Vn does.
+---
+ sdk/src/core/exception_handler_posix.cpp | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/sdk/src/core/exception_handler_posix.cpp b/sdk/src/core/exception_handler_posix.cpp
+index a98659c..4db34bc 100644
+--- a/sdk/src/core/exception_handler_posix.cpp
++++ b/sdk/src/core/exception_handler_posix.cpp
+@@ -138,6 +138,9 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+   thread_context.pstate = mcontext.pstate;
+   struct fpsimd_context* mcontext_fpsimd = nullptr;
+   struct esr_context* mcontext_esr = nullptr;
++#ifdef SVE_MAGIC
++  struct sve_context* mcontext_sve = nullptr;
++#endif
+   for (struct _aarch64_ctx* mcontext_extension =
+            reinterpret_cast<struct _aarch64_ctx*>(mcontext.__reserved);
+        mcontext_extension->magic;
+@@ -150,6 +153,11 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+       case ESR_MAGIC:
+         mcontext_esr = reinterpret_cast<struct esr_context*>(mcontext_extension);
+         break;
++#ifdef SVE_MAGIC
++      case SVE_MAGIC:
++        mcontext_sve = reinterpret_cast<struct sve_context*>(mcontext_extension);
++        break;
++#endif
+       default:
+         break;
+     }
+@@ -418,6 +426,20 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+           std::memcpy(&mcontext_fpsimd->vregs[modified_register_index],
+                       &thread_context.v[modified_register_index], sizeof(vec128_t));
+           mcontext.regs[modified_register_index] = thread_context.x[modified_register_index];
++#ifdef SVE_MAGIC
++          // While the thread has live SVE state, the vector registers are
++          // restored from the SVE record instead: Vn is the low 128 bits of
++          // Zn, and writing Vn clears the rest.
++          if (mcontext_sve) {
++            const uint32_t vq = sve_vq_from_vl(mcontext_sve->vl);
++            if (mcontext_sve->head.size >= SVE_SIG_CONTEXT_SIZE(vq)) {
++              uint8_t* zreg = reinterpret_cast<uint8_t*>(mcontext_sve) +
++                              SVE_SIG_ZREG_OFFSET(vq, modified_register_index);
++              std::memset(zreg, 0, SVE_SIG_ZREG_SIZE(vq));
++              std::memcpy(zreg, &thread_context.v[modified_register_index], sizeof(vec128_t));
++            }
++          }
++#endif
+         }
+       }
+ #endif  // REX_PLATFORM_MAC

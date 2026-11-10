@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/gabrick75/fh2-recompiled",
+  "commit": "6f88eeca7782fe8d894462e4f40156485fc9c350",
+  "version": "v0.4.5",
+  "sdk_repository": "https://github.com/rexglue/rexglue-sdk",
+  "sdk_commit": "c94f5ebdcb3c9d1a460ca48e04f9758448f8d518",
+  "verified_utc": "2026-11-10T00:00:00Z"
+}

@@ -1,0 +1,64 @@
+From 53869dc9c546879c2bf863e35fac1f60a3d55c15 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Kenan=20Kasumovi=C4=87?=
+ <46025606+Ken5998@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 08:51:12 +0000
+Subject: [PATCH 5/5] fix(posix): pass on a fault no handler takes on linux
+
+---
+ sdk/src/core/exception_handler_posix.cpp | 36 ++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/sdk/src/core/exception_handler_posix.cpp b/sdk/src/core/exception_handler_posix.cpp
+index 4db34bc..a85cec4 100644
+--- a/sdk/src/core/exception_handler_posix.cpp
++++ b/sdk/src/core/exception_handler_posix.cpp
+@@ -19,6 +19,7 @@
+ 
+ #if REX_PLATFORM_LINUX || REX_PLATFORM_MAC
+ 
++#include <dlfcn.h>
+ #include <signal.h>
+ #include <unistd.h>
+ 
+@@ -447,6 +448,41 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+       return;
+     }
+   }
++#if REX_PLATFORM_GNU_LINUX
++  // Nobody handled this fault. Say where it was, then hand it to the handler
++  // installed before this one (the SEH emulation, which throws into a guest
++  // __except around it), or else take the default action, which ends the
++  // process, instead of retrying the same instruction forever.
++  {
++    uintptr_t fault_pc = 0;
++#if REX_ARCH_AMD64
++    fault_pc = uintptr_t(thread_context.rip);
++#elif REX_ARCH_ARM64
++    fault_pc = uintptr_t(thread_context.pc);
++#endif
++    Dl_info fault_info{};
++    if (dladdr(reinterpret_cast<void*>(fault_pc), &fault_info) && fault_info.dli_fname) {
++      REXLOG_ERROR("Unhandled signal {} at {}+0x{:X} ({}), fault address {:p}", signal_number,
++                   fault_info.dli_fname, fault_pc - uintptr_t(fault_info.dli_fbase),
++                   fault_info.dli_sname ? fault_info.dli_sname : "?",
++                   signal_info ? signal_info->si_addr : nullptr);
++    } else {
++      REXLOG_ERROR("Unhandled signal {} at 0x{:X}, fault address {:p}", signal_number, fault_pc,
++                   signal_info ? signal_info->si_addr : nullptr);
++    }
++    const struct sigaction* original = signal_number == SIGILL
++        ? &original_sigill_handler_ : &original_sigsegv_handler_;
++    if ((original->sa_flags & SA_SIGINFO) && original->sa_sigaction) {
++      original->sa_sigaction(signal_number, signal_info, signal_context);
++      return;
++    }
++    struct sigaction fallback = *original;
++    if (fallback.sa_handler == SIG_IGN) fallback.sa_handler = SIG_DFL;
++    if (sigaction(signal_number, &fallback, nullptr) != 0) {
++      _exit(128 + signal_number);
++    }
++  }
++#endif
+ #if REX_PLATFORM_ANDROID
+   // Nobody handled this fault. Returning with our handler still installed
+   // retries the same instruction forever (black screen and a log storm).
